@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 from typing import Tuple, Optional
 from einops import rearrange
+import logging
 from .utils import hash_state_dict_keys
 from .wan_video_camera_controller import SimpleAdapter
 try:
@@ -23,8 +24,15 @@ try:
     SAGE_ATTN_AVAILABLE = True
 except ModuleNotFoundError:
     SAGE_ATTN_AVAILABLE = False
-    
-    
+
+try:
+    from xformers.ops import memory_efficient_attention as xformers_attn
+
+    XFORMERS_AVAILABLE = True
+except ModuleNotFoundError:
+    XFORMERS_AVAILABLE = False
+
+
 def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads: int, compatibility_mode=False):
     if compatibility_mode:
         q = rearrange(q, "b s (n d) -> b n s d", n=num_heads)
@@ -32,6 +40,8 @@ def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads
         v = rearrange(v, "b s (n d) -> b n s d", n=num_heads)
         x = F.scaled_dot_product_attention(q, k, v)
         x = rearrange(x, "b n s d -> b s (n d)", n=num_heads)
+    elif XFORMERS_AVAILABLE:
+        x = xformers_attn(q, k, v)
     elif FLASH_ATTN_3_AVAILABLE:
         q = rearrange(q, "b s (n d) -> b s n d", n=num_heads)
         k = rearrange(k, "b s (n d) -> b s n d", n=num_heads)
